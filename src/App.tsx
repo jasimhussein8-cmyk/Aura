@@ -28,10 +28,12 @@ import {
   Moon,
   Link,
   Eye,
-  Trash2
+  Trash2,
+  Image as ImageIcon
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { User, Subject, Lesson, Exam, Question, Message, Role, UserStats, LeaderboardEntry, SubjectProgress, Assignment, Submission, Recommendation } from './types';
+import MediaViewer from './components/MediaViewer';
 
 // --- Components ---
 
@@ -257,24 +259,31 @@ const SubmissionModal = ({ assignment, user, onClose, onSuccess }: { assignment:
   );
 };
 
-const AssignmentsView = ({ user }: { user: User }) => {
+const AssignmentsView = ({ user, onViewMedia }: { user: User, onViewMedia: (url: string, type: any, title: string) => void }) => {
   const [assignments, setAssignments] = useState<Assignment[]>([]);
   const [submissions, setSubmissions] = useState<Submission[]>([]);
   const [selectedAssignment, setSelectedAssignment] = useState<Assignment | null>(null);
   const [loading, setLoading] = useState(true);
+  const [showAddAssignment, setShowAddAssignment] = useState(false);
+  const [newAssignment, setNewAssignment] = useState({ title: '', description: '', dueDate: '', subjectId: 0 });
+  const [subjects, setSubjects] = useState<Subject[]>([]);
+  const [viewingSubmissions, setViewingSubmissions] = useState<Assignment | null>(null);
 
   const fetchData = async () => {
     try {
-      const [assignmentsRes, submissionsRes] = await Promise.all([
+      const [assignmentsRes, submissionsRes, subjectsRes] = await Promise.all([
         fetch(`/api/assignments/${user.grade}`),
-        fetch(`/api/submissions/user/${user.id}`)
+        fetch(`/api/submissions/user/${user.id}`),
+        fetch(`/api/subjects/${user.grade}`)
       ]);
-      const [assignmentsData, submissionsData] = await Promise.all([
+      const [assignmentsData, submissionsData, subjectsData] = await Promise.all([
         assignmentsRes.json(),
-        submissionsRes.json()
+        submissionsRes.json(),
+        subjectsRes.json()
       ]);
       setAssignments(assignmentsData);
       setSubmissions(submissionsData);
+      setSubjects(subjectsData);
       setLoading(false);
     } catch (err) {
       console.error("Failed to fetch assignments", err);
@@ -286,16 +295,98 @@ const AssignmentsView = ({ user }: { user: User }) => {
     fetchData();
   }, [user.grade, user.id]);
 
+  const handleAddAssignment = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const res = await fetch('/api/admin/assignments', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(newAssignment)
+    });
+    if (res.ok) {
+      setShowAddAssignment(false);
+      setNewAssignment({ title: '', description: '', dueDate: '', subjectId: 0 });
+      fetchData();
+    }
+  };
+
   const getSubmission = (assignmentId: number) => {
     return submissions.find(s => s.assignment_id === assignmentId);
   };
 
+  if (viewingSubmissions) {
+    return <TeacherSubmissionsView assignment={viewingSubmissions} onBack={() => setViewingSubmissions(null)} onViewMedia={onViewMedia} />;
+  }
+
   return (
     <div className="space-y-8">
-      <header>
-        <h2 className="text-2xl md:text-3xl font-bold text-slate-900 dark:text-slate-100 transition-colors duration-300">الواجبات المنزلية</h2>
-        <p className="text-sm md:text-base text-slate-500 dark:text-slate-400 mt-1 transition-colors duration-300">تابع واجباتك وقم بتسليمها في الوقت المحدد.</p>
+      <header className="flex items-center justify-between">
+        <div>
+          <h2 className="text-2xl md:text-3xl font-bold text-slate-900 dark:text-slate-100 transition-colors duration-300">الواجبات المنزلية</h2>
+          <p className="text-sm md:text-base text-slate-500 dark:text-slate-400 mt-1 transition-colors duration-300">تابع واجباتك وقم بتسليمها في الوقت المحدد.</p>
+        </div>
+        {(user.role === 'teacher' || user.role === 'admin') && (
+          <button 
+            onClick={() => setShowAddAssignment(true)}
+            className="btn-primary flex items-center gap-2 py-2"
+          >
+            <Plus size={20} /> إضافة واجب
+          </button>
+        )}
       </header>
+
+      {showAddAssignment && (
+        <motion.div 
+          initial={{ opacity: 0, y: -20 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="bg-white dark:bg-slate-900 p-6 rounded-3xl border border-indigo-100 dark:border-slate-800 shadow-lg"
+        >
+          <form onSubmit={handleAddAssignment} className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="md:col-span-2">
+              <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">العنوان</label>
+              <input 
+                type="text" required
+                value={newAssignment.title}
+                onChange={e => setNewAssignment({...newAssignment, title: e.target.value})}
+                className="w-full px-4 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 outline-none focus:ring-2 focus:ring-indigo-500 transition-colors duration-300"
+              />
+            </div>
+            <div className="md:col-span-2">
+              <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">الوصف</label>
+              <textarea 
+                required
+                value={newAssignment.description}
+                onChange={e => setNewAssignment({...newAssignment, description: e.target.value})}
+                className="w-full px-4 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 outline-none focus:ring-2 focus:ring-indigo-500 transition-colors duration-300"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">المادة</label>
+              <select 
+                required
+                value={newAssignment.subjectId}
+                onChange={e => setNewAssignment({...newAssignment, subjectId: parseInt(e.target.value)})}
+                className="w-full px-4 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 outline-none focus:ring-2 focus:ring-indigo-500 transition-colors duration-300"
+              >
+                <option value={0}>اختر المادة</option>
+                {subjects.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">تاريخ الاستحقاق</label>
+              <input 
+                type="date" required
+                value={newAssignment.dueDate}
+                onChange={e => setNewAssignment({...newAssignment, dueDate: e.target.value})}
+                className="w-full px-4 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 outline-none focus:ring-2 focus:ring-indigo-500 transition-colors duration-300"
+              />
+            </div>
+            <div className="md:col-span-2 flex justify-end gap-2">
+              <button type="button" onClick={() => setShowAddAssignment(false)} className="btn-secondary py-2">إلغاء</button>
+              <button type="submit" className="btn-primary py-2">حفظ الواجب</button>
+            </div>
+          </form>
+        </motion.div>
+      )}
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {assignments.map((assignment) => {
@@ -318,33 +409,43 @@ const AssignmentsView = ({ user }: { user: User }) => {
                     <p className="text-sm text-slate-500 dark:text-slate-400">{assignment.subject_name}</p>
                   </div>
                 </div>
-                {submission ? (
-                  <span className="px-3 py-1 bg-emerald-50 dark:bg-emerald-900/20 text-emerald-600 dark:text-emerald-400 text-xs font-bold rounded-full flex items-center gap-1">
-                    <CheckCircle2 size={14} /> تم التسليم
-                  </span>
-                ) : isOverdue ? (
-                  <span className="px-3 py-1 bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 text-xs font-bold rounded-full">
-                    متأخر
-                  </span>
-                ) : (
-                  <span className="px-3 py-1 bg-amber-50 dark:bg-amber-900/20 text-amber-600 dark:text-amber-400 text-xs font-bold rounded-full">
-                    قيد الانتظار
-                  </span>
-                )}
-                {user.role === 'admin' && (
-                  <button 
-                    onClick={async (e) => {
-                      e.stopPropagation();
-                      if(window.confirm('هل تريد حذف هذا الواجب؟')) {
-                        await fetch(`/api/admin/assignments/${assignment.id}`, { method: 'DELETE' });
-                        fetchData();
-                      }
-                    }}
-                    className="text-red-400 hover:text-red-600 dark:hover:text-red-400 p-1 mr-2"
-                  >
-                    حذف
-                  </button>
-                )}
+                <div className="flex flex-col items-end gap-2">
+                  {submission ? (
+                    <span className="px-3 py-1 bg-emerald-50 dark:bg-emerald-900/20 text-emerald-600 dark:text-emerald-400 text-xs font-bold rounded-full flex items-center gap-1">
+                      <CheckCircle2 size={14} /> تم التسليم
+                    </span>
+                  ) : isOverdue ? (
+                    <span className="px-3 py-1 bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 text-xs font-bold rounded-full">
+                      متأخر
+                    </span>
+                  ) : (
+                    <span className="px-3 py-1 bg-amber-50 dark:bg-amber-900/20 text-amber-600 dark:text-amber-400 text-xs font-bold rounded-full">
+                      قيد الانتظار
+                    </span>
+                  )}
+                  {(user.role === 'teacher' || user.role === 'admin') && (
+                    <div className="flex gap-2">
+                      <button 
+                        onClick={() => setViewingSubmissions(assignment)}
+                        className="text-xs text-indigo-600 hover:underline"
+                      >
+                        عرض التسليمات
+                      </button>
+                      <button 
+                        onClick={async (e) => {
+                          e.stopPropagation();
+                          if(window.confirm('هل تريد حذف هذا الواجب؟')) {
+                            await fetch(`/api/admin/assignments/${assignment.id}`, { method: 'DELETE' });
+                            fetchData();
+                          }
+                        }}
+                        className="text-red-400 hover:text-red-600 dark:hover:text-red-400 p-1"
+                      >
+                        حذف
+                      </button>
+                    </div>
+                  )}
+                </div>
               </div>
 
               <p className="text-slate-600 dark:text-slate-400 text-sm mb-6 leading-relaxed">
@@ -360,23 +461,35 @@ const AssignmentsView = ({ user }: { user: User }) => {
                 </div>
                 
                 {!submission ? (
-                  <button 
-                    onClick={() => setSelectedAssignment(assignment)}
-                    className="btn-primary py-2 px-4 text-sm flex items-center gap-2"
-                  >
-                    <Upload size={16} />
-                    رفع الواجب
-                  </button>
+                  user.role === 'student' && (
+                    <button 
+                      onClick={() => setSelectedAssignment(assignment)}
+                      className="btn-primary py-2 px-4 text-sm flex items-center gap-2"
+                    >
+                      <Upload size={16} />
+                      رفع الواجب
+                    </button>
+                  )
                 ) : (
-                  <div className="text-right">
-                    {submission.grade !== null && submission.grade !== undefined ? (
-                      <div className="flex flex-col items-end">
-                        <span className="text-xs text-slate-500">الدرجة</span>
-                        <span className="text-lg font-bold text-indigo-600">{submission.grade} / 100</span>
-                      </div>
-                    ) : (
-                      <span className="text-xs text-slate-400 italic">في انتظار التقييم</span>
+                  <div className="flex items-center gap-4">
+                    {submission.file_url && (
+                      <button 
+                        onClick={() => onViewMedia(submission.file_url!, 'file', submission.file_name || 'ملف الواجب')}
+                        className="text-xs text-indigo-600 flex items-center gap-1 hover:underline"
+                      >
+                        <Eye size={14} /> عرض الملف المرفوع
+                      </button>
                     )}
+                    <div className="text-right">
+                      {submission.grade !== null && submission.grade !== undefined ? (
+                        <div className="flex flex-col items-end">
+                          <span className="text-xs text-slate-500">الدرجة</span>
+                          <span className="text-lg font-bold text-indigo-600">{submission.grade} / 100</span>
+                        </div>
+                      ) : (
+                        <span className="text-xs text-slate-400 italic">في انتظار التقييم</span>
+                      )}
+                    </div>
                   </div>
                 )}
               </div>
@@ -399,6 +512,139 @@ const AssignmentsView = ({ user }: { user: User }) => {
           onClose={() => setSelectedAssignment(null)}
           onSuccess={fetchData}
         />
+      )}
+    </div>
+  );
+};
+
+const TeacherSubmissionsView = ({ assignment, onBack, onViewMedia }: { assignment: Assignment, onBack: () => void, onViewMedia: (url: string, type: any, title: string) => void }) => {
+  const [submissions, setSubmissions] = useState<Submission[]>([]);
+  const [gradingSubmission, setGradingSubmission] = useState<Submission | null>(null);
+  const [grade, setGrade] = useState('');
+  const [feedback, setFeedback] = useState('');
+
+  const fetchSubmissions = async () => {
+    const res = await fetch(`/api/submissions/assignment/${assignment.id}`);
+    const data = await res.json();
+    setSubmissions(data);
+  };
+
+  useEffect(() => {
+    fetchSubmissions();
+  }, [assignment.id]);
+
+  const handleGrade = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!gradingSubmission) return;
+
+    const res = await fetch('/api/submissions/grade', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        submissionId: gradingSubmission.id,
+        grade: parseInt(grade),
+        feedback
+      })
+    });
+
+    if (res.ok) {
+      setGradingSubmission(null);
+      setGrade('');
+      setFeedback('');
+      fetchSubmissions();
+    }
+  };
+
+  return (
+    <div className="space-y-6">
+      <button onClick={onBack} className="flex items-center gap-2 text-indigo-600 font-semibold hover:underline">
+        <ChevronRight size={20} /> العودة للواجبات
+      </button>
+
+      <header>
+        <h2 className="text-2xl font-bold text-slate-900 dark:text-slate-100">تسليمات واجب: {assignment.title}</h2>
+        <p className="text-slate-500 dark:text-slate-400">إجمالي التسليمات: {submissions.length}</p>
+      </header>
+
+      <div className="grid grid-cols-1 gap-4">
+        {submissions.map(s => (
+          <div key={s.id} className="bg-white dark:bg-slate-900 p-6 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm">
+            <div className="flex items-start justify-between mb-4">
+              <div>
+                <h4 className="font-bold text-slate-900 dark:text-slate-100">{s.student_name}</h4>
+                <p className="text-xs text-slate-500">{new Date(s.submitted_at).toLocaleString('ar-EG')}</p>
+              </div>
+              {s.grade !== null ? (
+                <span className="px-3 py-1 bg-emerald-50 text-emerald-600 text-xs font-bold rounded-full">تم التقييم: {s.grade}/100</span>
+              ) : (
+                <button 
+                  onClick={() => setGradingSubmission(s)}
+                  className="btn-primary py-1 px-4 text-xs"
+                >
+                  تقييم الآن
+                </button>
+              )}
+            </div>
+
+            {s.text_entry && (
+              <div className="mb-4 p-3 bg-slate-50 dark:bg-slate-800 rounded-xl text-sm text-slate-700 dark:text-slate-300">
+                {s.text_entry}
+              </div>
+            )}
+
+            {s.file_url && (
+              <button 
+                onClick={() => onViewMedia(s.file_url!, 'file', s.file_name || 'ملف الواجب')}
+                className="flex items-center gap-2 text-indigo-600 text-sm font-bold hover:underline mb-4"
+              >
+                <FileText size={18} />
+                عرض الملف المرفق: {s.file_name}
+              </button>
+            )}
+
+            {s.feedback && (
+              <div className="mt-2 p-3 bg-indigo-50 dark:bg-indigo-900/20 rounded-xl border border-indigo-100 dark:border-indigo-800">
+                <p className="text-xs font-bold text-indigo-900 dark:text-indigo-300">ملاحظاتك:</p>
+                <p className="text-xs text-indigo-700 dark:text-indigo-400">{s.feedback}</p>
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+
+      {gradingSubmission && (
+        <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-[110] flex items-center justify-center p-4">
+          <motion.div 
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            className="bg-white dark:bg-slate-900 rounded-3xl w-full max-w-md p-6 shadow-2xl"
+          >
+            <h3 className="text-xl font-bold mb-4">تقييم تسليم: {gradingSubmission.student_name}</h3>
+            <form onSubmit={handleGrade} className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium mb-1">الدرجة (من 100)</label>
+                <input 
+                  type="number" min="0" max="100" required
+                  value={grade}
+                  onChange={e => setGrade(e.target.value)}
+                  className="w-full px-4 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 outline-none focus:ring-2 focus:ring-indigo-500"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-1">الملاحظات</label>
+                <textarea 
+                  value={feedback}
+                  onChange={e => setFeedback(e.target.value)}
+                  className="w-full px-4 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 outline-none focus:ring-2 focus:ring-indigo-500 min-h-[100px]"
+                />
+              </div>
+              <div className="flex gap-2">
+                <button type="submit" className="flex-1 btn-primary py-2">حفظ التقييم</button>
+                <button type="button" onClick={() => setGradingSubmission(null)} className="flex-1 btn-secondary py-2">إلغاء</button>
+              </div>
+            </form>
+          </motion.div>
+        </div>
       )}
     </div>
   );
@@ -524,7 +770,7 @@ const LoginView = ({ onLogin }: { onLogin: (u: User) => void }) => {
   );
 };
 
-const StudentDashboard = ({ user }: { user: User }) => {
+const StudentDashboard = ({ user, onViewMedia }: { user: User, onViewMedia: (url: string, type: any, title: string) => void }) => {
   const [subjects, setSubjects] = useState<Subject[]>([]);
   const [stats, setStats] = useState<UserStats | null>(null);
   const [progress, setProgress] = useState<SubjectProgress[]>([]);
@@ -670,7 +916,18 @@ const StudentDashboard = ({ user }: { user: User }) => {
                     key={rec.id}
                     initial={{ opacity: 0, x: 20 }}
                     animate={{ opacity: 1, x: 0 }}
-                    className="flex items-start gap-4 p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-700 hover:border-indigo-200 dark:hover:border-indigo-800 transition-all"
+                    className="flex items-start gap-4 p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-700 hover:border-indigo-200 dark:hover:border-indigo-800 transition-all cursor-pointer"
+                    onClick={async () => {
+                      if (rec.content_type === 'lesson') {
+                        // Fetch lesson details to get URL
+                        const res = await fetch(`/api/lessons`);
+                        const lessons: Lesson[] = await res.json();
+                        const lesson = lessons.find(l => l.id === rec.content_id);
+                        if (lesson && lesson.url) {
+                          onViewMedia(lesson.url, lesson.type || 'video', lesson.title);
+                        }
+                      }
+                    }}
                   >
                     <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${
                       rec.priority === 'high' ? 'bg-red-100 dark:bg-red-900/20 text-red-600 dark:text-red-400' : 
@@ -1099,7 +1356,7 @@ const ExamView = ({ user, exam, onComplete, onCancel }: { user: User, exam: Exam
   );
 };
 
-const SubjectDetailView = ({ user, subject, onBack }: { user: User, subject: Subject, onBack: () => void }) => {
+const SubjectDetailView = ({ user, subject, onBack, onViewMedia }: { user: User, subject: Subject, onBack: () => void, onViewMedia: (url: string, type: any, title: string) => void }) => {
   const [lessons, setLessons] = useState<Lesson[]>([]);
   const [exams, setExams] = useState<Exam[]>([]);
   const [activeExam, setActiveExam] = useState<Exam | null>(null);
@@ -1172,7 +1429,7 @@ const SubjectDetailView = ({ user, subject, onBack }: { user: User, subject: Sub
                   </div>
                   <div className="flex items-center gap-2">
                     <button 
-                      onClick={() => window.open(lesson.url, '_blank')}
+                      onClick={() => onViewMedia(lesson.url, lesson.type, lesson.title)}
                       className="flex items-center gap-2 px-4 py-2 bg-slate-50 dark:bg-slate-800 text-slate-600 dark:text-slate-400 rounded-xl font-bold text-sm hover:bg-indigo-50 dark:hover:bg-indigo-900/40 hover:text-indigo-600 dark:hover:text-indigo-400 transition-all"
                     >
                       <Eye size={16} /> عرض
@@ -1225,7 +1482,7 @@ const SubjectDetailView = ({ user, subject, onBack }: { user: User, subject: Sub
   );
 };
 
-const SubjectsView = ({ user }: { user: User }) => {
+const SubjectsView = ({ user, onViewMedia }: { user: User, onViewMedia: (url: string, type: any, title: string) => void }) => {
   const [subjects, setSubjects] = useState<Subject[]>([]);
   const [selectedSubject, setSelectedSubject] = useState<Subject | null>(null);
   const [loading, setLoading] = useState(true);
@@ -1240,7 +1497,7 @@ const SubjectsView = ({ user }: { user: User }) => {
   }, [user.grade]);
 
   if (selectedSubject) {
-    return <SubjectDetailView user={user} subject={selectedSubject} onBack={() => setSelectedSubject(null)} />;
+    return <SubjectDetailView user={user} subject={selectedSubject} onBack={() => setSelectedSubject(null)} onViewMedia={onViewMedia} />;
   }
 
   return (
@@ -1473,7 +1730,7 @@ const AdminUsersView = () => {
   );
 };
 
-const CurriculumManagementView = () => {
+const CurriculumManagementView = ({ onViewMedia }: { onViewMedia: (url: string, type: any, title: string) => void }) => {
   const [subjects, setSubjects] = useState<Subject[]>([]);
   const [selectedSubject, setSelectedSubject] = useState<Subject | null>(null);
   const [lessons, setLessons] = useState<Lesson[]>([]);
@@ -1726,8 +1983,8 @@ const CurriculumManagementView = () => {
                       <span className="font-bold text-slate-900 dark:text-slate-100">{l.title}</span>
                     </div>
                     <div className="flex items-center gap-2">
-                      <button 
-                        onClick={() => window.open(l.url, '_blank')}
+                    <button 
+                        onClick={() => onViewMedia(l.url, l.type, l.title)}
                         className="text-indigo-600 dark:text-indigo-400 p-1 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 rounded"
                         title="عرض"
                       >
@@ -1757,7 +2014,7 @@ const CurriculumManagementView = () => {
   );
 };
 
-const GradesView = ({ user }: { user: User }) => {
+const GradesView = ({ user, onViewMedia }: { user: User, onViewMedia: (url: string, type: any, title: string) => void }) => {
   const [selectedGrade, setSelectedGrade] = useState<string | null>(null);
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const [content, setContent] = useState<any[]>([]);
@@ -2034,14 +2291,12 @@ const GradesView = ({ user }: { user: User }) => {
               </div>
               <h4 className="font-bold text-lg text-slate-900 dark:text-slate-100 mb-2">{item.title}</h4>
               <p className="text-sm text-slate-500 dark:text-slate-400 mb-6 line-clamp-2">{item.description}</p>
-              <a 
-                href={item.url} 
-                target="_blank" 
-                rel="noopener noreferrer"
+              <button 
+                onClick={() => onViewMedia(item.url, item.type === 'file' ? 'pdf' : item.type, item.title)}
                 className="w-full flex items-center justify-center gap-2 py-3 bg-slate-50 dark:bg-slate-800 text-indigo-600 dark:text-indigo-400 font-bold rounded-2xl hover:bg-indigo-600 hover:text-white transition-all"
               >
                 عرض المحتوى <ChevronRight size={18} className="transform rotate-180" />
-              </a>
+              </button>
             </motion.div>
           ))
         )}
@@ -2077,6 +2332,28 @@ export default function App() {
   const handleLogout = () => {
     setUser(null);
     setActiveTab('dashboard');
+  };
+
+  const [viewingMedia, setViewingMedia] = useState<{ url: string, type: any, title: string } | null>(null);
+
+  const handleViewMedia = (url: string, type: any, title: string) => {
+    // Map types to MediaViewer expected types
+    let mediaType: 'video' | 'pdf' | 'image' | 'text' | 'link' = 'link';
+    
+    if (type === 'video') mediaType = 'video';
+    else if (type === 'pdf' || type === 'file') mediaType = 'pdf';
+    else if (type === 'image') mediaType = 'image';
+    else if (type === 'text') mediaType = 'text';
+    
+    // Check extension for files
+    if (type === 'file' || type === 'link') {
+      const ext = url.split('.').pop()?.toLowerCase();
+      if (['jpg', 'jpeg', 'png', 'gif', 'webp'].includes(ext || '')) mediaType = 'image';
+      else if (['mp4', 'webm', 'ogg'].includes(ext || '')) mediaType = 'video';
+      else if (ext === 'pdf') mediaType = 'pdf';
+    }
+
+    setViewingMedia({ url, type: mediaType, title });
   };
 
   if (!user) {
@@ -2215,14 +2492,14 @@ export default function App() {
               exit={{ opacity: 0, y: -10 }}
               transition={{ duration: 0.2 }}
             >
-              {activeTab === 'dashboard' && <StudentDashboard user={user} />}
+              {activeTab === 'dashboard' && <StudentDashboard user={user} onViewMedia={handleViewMedia} />}
               {activeTab === 'leaderboard' && <LeaderboardView user={user} />}
-              {activeTab === 'subjects' && <SubjectsView user={user} />}
-              {activeTab === 'assignments' && <AssignmentsView user={user} />}
-              {activeTab === 'grades' && <GradesView user={user} />}
+              {activeTab === 'subjects' && <SubjectsView user={user} onViewMedia={handleViewMedia} />}
+              {activeTab === 'assignments' && <AssignmentsView user={user} onViewMedia={handleViewMedia} />}
+              {activeTab === 'grades' && <GradesView user={user} onViewMedia={handleViewMedia} />}
               {activeTab === 'chat' && <ChatView user={user} />}
               {activeTab === 'users' && <AdminUsersView />}
-              {activeTab === 'curriculum' && <CurriculumManagementView />}
+              {activeTab === 'curriculum' && <CurriculumManagementView onViewMedia={handleViewMedia} />}
               {/* Other tabs would go here */}
               {activeTab !== 'dashboard' && activeTab !== 'leaderboard' && activeTab !== 'grades' && activeTab !== 'chat' && activeTab !== 'users' && activeTab !== 'assignments' && activeTab !== 'subjects' && (
                 <div className="flex flex-col items-center justify-center py-20 text-slate-400">
@@ -2237,6 +2514,17 @@ export default function App() {
       </main>
 
       <BottomNav activeTab={activeTab} setActiveTab={setActiveTab} role={user.role} />
+
+      <AnimatePresence>
+        {viewingMedia && (
+          <MediaViewer 
+            url={viewingMedia.url}
+            type={viewingMedia.type}
+            title={viewingMedia.title}
+            onClose={() => setViewingMedia(null)}
+          />
+        )}
+      </AnimatePresence>
     </div>
   );
 }
