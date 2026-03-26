@@ -1,0 +1,30 @@
+{
+  "project_info": {
+    "project_number": "879700646595",
+    "firebase_url": "https://edu-star-7be19-default-rtdb.firebaseio.com",
+    "project_id": "edu-star-7be19",
+    "storage_bucket": "edu-star-7be19.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:879700646595:android:c484a563d9d4989446e076",
+        "android_client_info": {
+          "package_name": "com.edustar.app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAqwCIymWe4k_Uuq5oXMq_YTCf1vaWfcNM"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
